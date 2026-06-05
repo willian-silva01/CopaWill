@@ -1,0 +1,297 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ChampionshipStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  FINISHED
+  ARCHIVED
+}
+
+enum PhaseType {
+  GROUP_STAGE
+  ROUND_OF_16
+  QUARTER_FINAL
+  SEMI_FINAL
+  THIRD_PLACE
+  FINAL
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  POSTPONED
+  CANCELLED
+}
+
+// ──────────────────────────────────────────
+// USERS
+// ──────────────────────────────────────────
+
+model User {
+  id                String    @id @default(uuid())
+  name              String    @db.VarChar(100)
+  username          String    @unique @db.VarChar(30)
+  email             String    @unique @db.VarChar(255)
+  passwordHash      String    @map("password_hash") @db.VarChar(255)
+  avatarUrl         String?   @map("avatar_url") @db.VarChar(500)
+  role              Role      @default(USER)
+  isActive          Boolean   @default(true) @map("is_active")
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  guesses             Guess[]
+  userChampionships   UserChampionship[]
+  rankings            Ranking[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+// ──────────────────────────────────────────
+// CHAMPIONSHIPS
+// ──────────────────────────────────────────
+
+model Championship {
+  id            String             @id @default(uuid())
+  name          String             @db.VarChar(100)
+  description   String?            @db.Text
+  logoUrl       String?            @map("logo_url") @db.VarChar(500)
+  country       String?            @db.VarChar(100)
+  season        String?            @db.VarChar(10)
+  status        ChampionshipStatus @default(DRAFT)
+  scoringConfig Json               @default("{\"exact_score\":5,\"correct_winner\":3,\"correct_draw\":3,\"wrong\":0}") @map("scoring_config")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  phases            Phase[]
+  matches           Match[]
+  userChampionships UserChampionship[]
+  rankings          Ranking[]
+
+  @@map("championships")
+}
+
+model UserChampionship {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  championshipId   String   @map("championship_id")
+  joinedAt         DateTime @default(now()) @map("joined_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  championship Championship @relation(fields: [championshipId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, championshipId])
+  @@map("user_championships")
+}
+
+// ──────────────────────────────────────────
+// TEAMS
+// ──────────────────────────────────────────
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(100)
+  shortName String?  @map("short_name") @db.VarChar(10)
+  country   String?  @db.VarChar(100)
+  logoUrl   String?  @map("logo_url") @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  homeMatches Match[] @relation("HomeTeam")
+  awayMatches Match[] @relation("AwayTeam")
+  groupTeams  GroupTeam[]
+
+  @@map("teams")
+}
+
+// ──────────────────────────────────────────
+// PHASES & GROUPS
+// ──────────────────────────────────────────
+
+model Phase {
+  id               String    @id @default(uuid())
+  championshipId   String    @map("championship_id")
+  name             String    @db.VarChar(100)
+  type             PhaseType
+  phaseOrder       Int       @map("phase_order")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  championship Championship @relation(fields: [championshipId], references: [id], onDelete: Cascade)
+  groups       Group[]
+  rounds       Round[]
+  matches      Match[]
+  rankings     Ranking[]
+
+  @@map("phases")
+}
+
+model Group {
+  id        String   @id @default(uuid())
+  phaseId   String   @map("phase_id")
+  name      String   @db.VarChar(10)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  phase      Phase       @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  groupTeams GroupTeam[]
+  matches    Match[]
+
+  @@map("groups")
+}
+
+model GroupTeam {
+  groupId String @map("group_id")
+  teamId  String @map("team_id")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  team  Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, teamId])
+  @@map("group_teams")
+}
+
+model Round {
+  id        String   @id @default(uuid())
+  phaseId   String   @map("phase_id")
+  name      String   @db.VarChar(50)
+  number    Int
+  createdAt DateTime @default(now()) @map("created_at")
+
+  phase    Phase     @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  matches  Match[]
+  rankings Ranking[]
+
+  @@map("rounds")
+}
+
+// ──────────────────────────────────────────
+// MATCHES
+// ──────────────────────────────────────────
+
+model Match {
+  id               String      @id @default(uuid())
+  championshipId   String      @map("championship_id")
+  phaseId          String      @map("phase_id")
+  roundId          String?     @map("round_id")
+  groupId          String?     @map("group_id")
+  homeTeamId       String      @map("home_team_id")
+  awayTeamId       String      @map("away_team_id")
+  homeScore        Int?        @map("home_score")
+  awayScore        Int?        @map("away_score")
+  matchDate        DateTime    @map("match_date")
+  status           MatchStatus @default(SCHEDULED)
+  guessOpen        Boolean     @default(false) @map("guess_open")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  championship Championship @relation(fields: [championshipId], references: [id])
+  phase        Phase        @relation(fields: [phaseId], references: [id])
+  round        Round?       @relation(fields: [roundId], references: [id])
+  group        Group?       @relation(fields: [groupId], references: [id])
+  homeTeam     Team         @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam     Team         @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  guesses      Guess[]
+
+  @@index([championshipId, status])
+  @@index([matchDate])
+  @@map("matches")
+}
+
+// ──────────────────────────────────────────
+// GUESSES
+// ──────────────────────────────────────────
+
+model Guess {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  matchId          String   @map("match_id")
+  homeScoreGuess   Int      @map("home_score_guess")
+  awayScoreGuess   Int      @map("away_score_guess")
+  points           Int?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, matchId])
+  @@index([userId])
+  @@index([matchId])
+  @@map("guesses")
+}
+
+// ──────────────────────────────────────────
+// RANKINGS
+// ──────────────────────────────────────────
+
+model Ranking {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  championshipId   String   @map("championship_id")
+  phaseId          String?  @map("phase_id")
+  roundId          String?  @map("round_id")
+  totalPoints      Int      @default(0) @map("total_points")
+  position         Int?
+  exactScores      Int      @default(0) @map("exact_scores")
+  correctWinners   Int      @default(0) @map("correct_winners")
+  wrongGuesses     Int      @default(0) @map("wrong_guesses")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  championship Championship @relation(fields: [championshipId], references: [id], onDelete: Cascade)
+  phase        Phase?       @relation(fields: [phaseId], references: [id])
+  round        Round?       @relation(fields: [roundId], references: [id])
+
+  @@unique([userId, championshipId, phaseId, roundId])
+  @@index([championshipId, totalPoints(sort: Desc)])
+  @@map("rankings")
+}
+
+// ──────────────────────────────────────────
+// SECURITY TOKENS
+// ──────────────────────────────────────────
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @map("token_hash") @db.VarChar(255)
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}

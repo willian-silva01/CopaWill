@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: copa-will-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: copawill
+      POSTGRES_USER: copawill
+      POSTGRES_PASSWORD: copawill
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U copawill']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: copa-will-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Descomente para rodar a API no Docker também
+  # api:
+  #   build:
+  #     context: ../apps/api
+  #     dockerfile: Dockerfile.dev
+  #   container_name: copa-will-api
+  #   restart: unless-stopped
+  #   ports:
+  #     - '3001:3001'
+  #   volumes:
+  #     - ../apps/api:/app
+  #     - /app/node_modules
+  #   env_file:
+  #     - ../apps/api/.env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
